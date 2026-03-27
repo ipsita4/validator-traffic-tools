@@ -11,5 +11,12 @@ tx_kb_data.csv
 tx_traffic.csv
 tx_traffic_4types.csv
 
+# GitHub Pages data (committed)
+!docs/tx_data.jsonl
+!docs/tx_data.json
+!docs/tx_kb_data.csv
+!docs/tx_traffic.csv
+!docs/tx_traffic_4types.csv
+
 # OS/editor
 .DS_Store
