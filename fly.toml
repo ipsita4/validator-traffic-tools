@@ -1,0 +1,22 @@
+app = "validator-traffic-tools"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DASHBOARD_PORT = "8080"
+  REFRESH_SECONDS = "300"
+  MAX_ROWS = "500"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    method = "GET"
+    path = "/dashboard"

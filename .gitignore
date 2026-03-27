@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Secrets
+.env
+
+# Runtime outputs
+tx_data.jsonl
+tx_data.json
+tx_kb_data.csv
+tx_traffic.csv
+tx_traffic_4types.csv
+
+# OS/editor
+.DS_Store

@@ -1,0 +1,58 @@
+name: Refresh traffic CSVs
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-traffic
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: validator-traffic-tools
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: validator-traffic-tools/package-lock.json
+
+      - name: Install deps
+        run: npm ci --omit=dev
+
+      - name: Fetch + build CSVs (latest 500)
+        env:
+          AUTH_URL: ${{ secrets.AUTH_URL }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          AUDIENCE: ${{ secrets.AUDIENCE }}
+          PARTY: ${{ secrets.PARTY }}
+          LEDGER_URL: ${{ secrets.LEDGER_URL }}
+          INDEXER_TIP_BACKLOG: "300000"
+          OUTPUT_DIR: "public"
+        run: |
+          rm -f public/tx_data.jsonl public/tx_traffic.csv public/tx_traffic_4types.csv public/tx_kb_data.csv || true
+          node scripts/fetch_tx_traffic.js
+          node scripts/filter_4types_csv.js public/tx_traffic.csv public/tx_traffic_4types.csv
+          node scripts/trim_csv.js public/tx_traffic.csv 500
+          node scripts/trim_csv.js public/tx_traffic_4types.csv 500
+          node scripts/trim_csv.js public/tx_kb_data.csv 500
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/tx_traffic.csv public/tx_traffic_4types.csv public/tx_kb_data.csv public/tx_data.jsonl || true
+          git commit -m "chore: refresh traffic CSVs" || exit 0
+          git push
+

@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Validator Traffic Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #121a2b;
+        --text: #e6edf7;
+        --muted: #9fb0cc;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 20px;
+        background: linear-gradient(180deg, #0b1220, #0a0f1a);
+        color: var(--text);
+        font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      .sub { color: var(--muted); margin-bottom: 18px; }
+      .row { display: grid; gap: 12px; }
+      .kpis { grid-template-columns: repeat(5, minmax(160px, 1fr)); margin-bottom: 12px; }
+      .charts { grid-template-columns: 1fr 1fr; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid #1d2944;
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .k-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+      .k-value { font-size: 22px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+      select, button {
+        background: #0f1729;
+        color: var(--text);
+        border: 1px solid #253454;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { border-bottom: 1px solid #223152; padding: 8px; text-align: left; }
+      th { color: var(--muted); font-weight: 600; }
+      .status { color: var(--muted); font-size: 12px; margin-top: 8px; }
+      @media (max-width: 980px) { .kpis, .charts { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <h1>Validator Traffic Dashboard</h1>
+    <div class="sub">Powered by <code>tx_traffic.csv</code> and <code>tx_traffic_4types.csv</code> (static GitHub Pages)</div>
+
+    <div class="toolbar panel">
+      <label for="source">Source:</label>
+      <select id="source">
+        <option value="tx_traffic.csv">All traffic</option>
+        <option value="tx_traffic_4types.csv">4 tx types</option>
+      </select>
+      <label for="typeFilter">Tx type:</label>
+      <select id="typeFilter"><option value="all">all</option></select>
+      <button id="reloadBtn">Reload</button>
+      <span id="loadedMsg" class="status"></span>
+    </div>
+
+    <div class="row kpis" id="kpis">
+      <div class="panel"><div class="k-label">Rows</div><div class="k-value" id="kRows">-</div></div>
+      <div class="panel"><div class="k-label">Total Base (KB)</div><div class="k-value" id="kBase">-</div></div>
+      <div class="panel"><div class="k-label">Total Extra (KB)</div><div class="k-value" id="kExtra">-</div></div>
+      <div class="panel"><div class="k-label">Avg Total / Tx (KB)</div><div class="k-value" id="kAvg">-</div></div>
+      <div class="panel"><div class="k-label">Latest Effective At</div><div class="k-value" id="kLatest">-</div></div>
+    </div>
+
+    <div class="row charts">
+      <div class="panel"><canvas id="txTypeChart" height="220"></canvas></div>
+      <div class="panel"><canvas id="trafficByTypeChart" height="220"></canvas></div>
+    </div>
+
+    <div class="panel" style="margin-top: 12px;">
+      <h3 style="margin: 0 0 8px;">Top Heavy Transactions (by total_kb)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>update_id</th>
+            <th>tx_type</th>
+            <th>effective_at</th>
+            <th>fetched_at</th>
+            <th>base_kb</th>
+            <th>extra_kb</th>
+            <th>total_kb</th>
+          </tr>
+        </thead>
+        <tbody id="topTable"></tbody>
+      </table>
+    </div>
+
+    <script>
+      const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const sourceEl = document.getElementById("source");
+      const typeFilterEl = document.getElementById("typeFilter");
+      const reloadBtn = document.getElementById("reloadBtn");
+      const loadedMsg = document.getElementById("loadedMsg");
+      let txTypeChart = null;
+      let trafficByTypeChart = null;
+      let fullRows = [];
+
+      function parseCsv(text) {
+        const lines = text.trim().split(/\r?\n/);
+        if (!lines.length) return [];
+        const headers = lines[0].split(",");
+        return lines.slice(1).filter(Boolean).map((line) => {
+          const cols = line.split(",");
+          const obj = {};
+          headers.forEach((h, i) => (obj[h] = cols[i]));
+          return obj;
+        });
+      }
+      function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+
+      function refreshTypeFilter(rows) {
+        const types = Array.from(new Set(rows.map((r) => r.tx_type).filter(Boolean))).sort();
+        const prev = typeFilterEl.value;
+        typeFilterEl.innerHTML = '<option value="all">all</option>' +
+          types.map((t) => `<option value="${t}">${t}</option>`).join("");
+        if (types.includes(prev)) typeFilterEl.value = prev;
+      }
+      function getFilteredRows() {
+        const t = typeFilterEl.value;
+        if (t === "all") return fullRows;
+        return fullRows.filter((r) => r.tx_type === t);
+      }
+
+      function renderKpis(rows) {
+        const totalBase = rows.reduce((a, r) => a + toNum(r.base_kb), 0);
+        const totalExtra = rows.reduce((a, r) => a + toNum(r.extra_kb), 0);
+        const total = rows.reduce((a, r) => a + toNum(r.total_kb), 0);
+        const avg = rows.length ? total / rows.length : 0;
+        const latestEffectiveAt = rows.map((r) => r.effective_at).filter(Boolean).sort().at(-1) || "-";
+        document.getElementById("kRows").textContent = rows.length.toLocaleString();
+        document.getElementById("kBase").textContent = fmt(totalBase);
+        document.getElementById("kExtra").textContent = fmt(totalExtra);
+        document.getElementById("kAvg").textContent = fmt(avg);
+        document.getElementById("kLatest").textContent = latestEffectiveAt;
+      }
+
+      function renderCharts(rows) {
+        const byTypeCount = {};
+        const byTypeTraffic = {};
+        for (const r of rows) {
+          const t = r.tx_type || "unknown";
+          byTypeCount[t] = (byTypeCount[t] || 0) + 1;
+          byTypeTraffic[t] = (byTypeTraffic[t] || 0) + toNum(r.total_kb);
+        }
+        const labels = Object.keys(byTypeCount).sort();
+        const countData = labels.map((l) => byTypeCount[l]);
+        const trafficData = labels.map((l) => Number(byTypeTraffic[l].toFixed(2)));
+
+        if (txTypeChart) txTypeChart.destroy();
+        txTypeChart = new Chart(document.getElementById("txTypeChart"), {
+          type: "bar",
+          data: { labels, datasets: [{ label: "Tx count", data: countData }] },
+          options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+
+        if (trafficByTypeChart) trafficByTypeChart.destroy();
+        trafficByTypeChart = new Chart(document.getElementById("trafficByTypeChart"), {
+          type: "bar",
+          data: { labels, datasets: [{ label: "Total traffic (KB)", data: trafficData }] },
+          options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+      }
+
+      function renderTopTable(rows) {
+        const top = [...rows].sort((a, b) => toNum(b.total_kb) - toNum(a.total_kb)).slice(0, 20);
+        document.getElementById("topTable").innerHTML = top.map((r) => `
+          <tr>
+            <td>${r.update_id || ""}</td>
+            <td>${r.tx_type || ""}</td>
+            <td>${r.effective_at || ""}</td>
+            <td>${r.fetched_at || ""}</td>
+            <td>${fmt(toNum(r.base_kb))}</td>
+            <td>${fmt(toNum(r.extra_kb))}</td>
+            <td>${fmt(toNum(r.total_kb))}</td>
+          </tr>
+        `).join("");
+      }
+
+      function renderAll() {
+        const rows = getFilteredRows();
+        renderKpis(rows);
+        renderCharts(rows);
+        renderTopTable(rows);
+      }
+
+      async function loadData() {
+        const src = sourceEl.value + "?t=" + Date.now();
+        loadedMsg.textContent = "Loading...";
+        try {
+          const res = await fetch(src, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          fullRows = parseCsv(text);
+          refreshTypeFilter(fullRows);
+          renderAll();
+          loadedMsg.textContent = `Loaded ${fullRows.length.toLocaleString()} rows from ${sourceEl.value}`;
+        } catch (e) {
+          loadedMsg.textContent = `Failed to load ${sourceEl.value}: ${e.message}`;
+          fullRows = [];
+          renderAll();
+        }
+      }
+
+      sourceEl.addEventListener("change", loadData);
+      typeFilterEl.addEventListener("change", renderAll);
+      reloadBtn.addEventListener("click", loadData);
+      loadData();
+    </script>
+  </body>
+</html>
+
