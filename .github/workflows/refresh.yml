@@ -38,18 +38,27 @@ jobs:
           INDEXER_TIP_BACKLOG: "300000"
           OUTPUT_DIR: "docs"
         run: |
-          rm -f docs/tx_data.jsonl docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv || true
-          node scripts/fetch_tx_traffic.js
+          set -euo pipefail
+          mkdir -p docs
+
+          # Generate new files first; only overwrite committed ones on success.
+          rm -f docs/*.tmp || true
+          OUTPUT_DIR="docs" node scripts/fetch_tx_traffic.js
           node scripts/filter_4types_csv.js docs/tx_traffic.csv docs/tx_traffic_4types.csv
           node scripts/trim_csv.js docs/tx_traffic.csv 500
           node scripts/trim_csv.js docs/tx_traffic_4types.csv 500
           node scripts/trim_csv.js docs/tx_kb_data.csv 500
 
+          # Fail fast if generation didn't produce files (prevents silent Pages 404s).
+          test -s docs/tx_traffic.csv
+          test -s docs/tx_traffic_4types.csv
+          test -s docs/tx_kb_data.csv
+
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv docs/tx_data.jsonl || true
+          git add docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv docs/tx_data.jsonl
           git commit -m "chore: refresh traffic CSVs" || exit 0
           git push
 
