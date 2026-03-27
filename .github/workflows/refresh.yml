@@ -62,7 +62,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv docs/tx_data.jsonl
+          echo "Docs directory contents:"
+          ls -la docs
+
+          # Force-add in case any ignore rules still match.
+          git add -f docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv || true
+          git add -f docs/tx_data.jsonl || true
           git commit -m "chore: refresh traffic CSVs" || exit 0
           git push
 
