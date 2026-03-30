@@ -87,8 +87,6 @@
             <option value="fetched_at_asc">fetched_at (oldest)</option>
             <option value="effective_at_desc">effective_at (newest)</option>
             <option value="effective_at_asc">effective_at (oldest)</option>
-            <option value="total_kb_desc">total_kb (largest)</option>
-            <option value="total_kb_asc">total_kb (smallest)</option>
           </select>
         </div>
       </div>
@@ -198,9 +196,7 @@
             case "fetched_at_desc": return toTimeMs(b.fetched_at) - toTimeMs(a.fetched_at);
             case "effective_at_asc": return toTimeMs(a.effective_at) - toTimeMs(b.effective_at);
             case "effective_at_desc": return toTimeMs(b.effective_at) - toTimeMs(a.effective_at);
-            case "total_kb_asc": return toNum(a.total_kb) - toNum(b.total_kb);
-            case "total_kb_desc":
-            default: return toNum(b.total_kb) - toNum(a.total_kb);
+            default: return toTimeMs(b.fetched_at) - toTimeMs(a.fetched_at);
           }
         }).slice(0, 50);
         document.getElementById("topTable").innerHTML = sorted.map((r) => `
