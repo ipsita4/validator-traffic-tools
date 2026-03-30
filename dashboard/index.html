@@ -95,7 +95,20 @@
     </div>
 
     <div class="panel" style="margin-top: 12px;">
-      <h3 style="margin: 0 0 8px;">Top Heavy Transactions (by total_kb)</h3>
+      <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+        <h3 style="margin: 0;">Transactions</h3>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <label for="tableSort">Sort:</label>
+          <select id="tableSort">
+            <option value="fetched_at_desc">fetched_at (newest)</option>
+            <option value="fetched_at_asc">fetched_at (oldest)</option>
+            <option value="effective_at_desc">effective_at (newest)</option>
+            <option value="effective_at_asc">effective_at (oldest)</option>
+            <option value="total_kb_desc">total_kb (largest)</option>
+            <option value="total_kb_asc">total_kb (smallest)</option>
+          </select>
+        </div>
+      </div>
       <table>
         <thead>
           <tr>
@@ -118,6 +131,7 @@
       const typeFilterEl = document.getElementById("typeFilter");
       const reloadBtn = document.getElementById("reloadBtn");
       const loadedMsg = document.getElementById("loadedMsg");
+      const tableSortEl = document.getElementById("tableSort");
 
       let txTypeChart = null;
       let trafficByTypeChart = null;
@@ -138,6 +152,11 @@
       function toNum(v) {
         const n = Number(v);
         return Number.isFinite(n) ? n : 0;
+      }
+      function toTimeMs(v) {
+        if (!v) return 0;
+        const t = Date.parse(String(v));
+        return Number.isFinite(t) ? t : 0;
       }
 
       function refreshTypeFilter(rows) {
@@ -200,9 +219,20 @@
       }
 
       function renderTopTable(rows) {
+        const sortKey = tableSortEl?.value || "fetched_at_desc";
         const top = [...rows]
-          .sort((a, b) => toNum(b.total_kb) - toNum(a.total_kb))
-          .slice(0, 20);
+          .sort((a, b) => {
+            switch (sortKey) {
+              case "fetched_at_asc": return toTimeMs(a.fetched_at) - toTimeMs(b.fetched_at);
+              case "fetched_at_desc": return toTimeMs(b.fetched_at) - toTimeMs(a.fetched_at);
+              case "effective_at_asc": return toTimeMs(a.effective_at) - toTimeMs(b.effective_at);
+              case "effective_at_desc": return toTimeMs(b.effective_at) - toTimeMs(a.effective_at);
+              case "total_kb_asc": return toNum(a.total_kb) - toNum(b.total_kb);
+              case "total_kb_desc":
+              default: return toNum(b.total_kb) - toNum(a.total_kb);
+            }
+          })
+          .slice(0, 50);
         const tbody = document.getElementById("topTable");
         tbody.innerHTML = top
           .map((r) => `
@@ -247,6 +277,7 @@
       sourceEl.addEventListener("change", loadData);
       typeFilterEl.addEventListener("change", renderAll);
       reloadBtn.addEventListener("click", loadData);
+      tableSortEl?.addEventListener("change", renderAll);
       loadData();
     </script>
   </body>
