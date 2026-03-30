@@ -19,12 +19,17 @@ const OUTPUT_JSONL = path.join(OUTPUT_DIR, "tx_data.jsonl");
 
 const CONCURRENCY = Number(process.env.CONCURRENCY || 5);
 const DELAY_MS = Number(process.env.DELAY_MS || 50);
+const APPEND = !["0", "false", "no"].includes(String(process.env.APPEND || "true").toLowerCase());
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 function ensureHeader(filePath, header) {
+  if (!APPEND) {
+    fs.writeFileSync(filePath, `${header}\n`, "utf8");
+    return;
+  }
   if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, `${header}\n`, "utf8");
 }
 
@@ -218,9 +223,10 @@ async function run() {
     "update_id,tx_type,effective_at,fetched_at,request_body_kb,response_body_kb,request_headers_kb,response_headers_kb,base_kb,extra_kb,total_kb"
   );
 
-  const kbCsv = fs.createWriteStream(OUTPUT_KB, { flags: "a" });
-  const trafficCsv = fs.createWriteStream(OUTPUT_TRAFFIC, { flags: "a" });
-  const jsonl = fs.createWriteStream(OUTPUT_JSONL, { flags: "a" });
+  const flags = APPEND ? "a" : "a";
+  const kbCsv = fs.createWriteStream(OUTPUT_KB, { flags });
+  const trafficCsv = fs.createWriteStream(OUTPUT_TRAFFIC, { flags });
+  const jsonl = fs.createWriteStream(OUTPUT_JSONL, { flags: APPEND ? "a" : "w" });
 
   const token = await getToken();
   const endRes = await axios.get(`${LEDGER_URL}/v2/state/ledger-end`, {

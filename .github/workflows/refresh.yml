@@ -37,23 +37,34 @@ jobs:
           PARTY: ${{ secrets.PARTY }}
           LEDGER_URL: ${{ secrets.LEDGER_URL }}
           INDEXER_TIP_BACKLOG: "300000"
-          OUTPUT_DIR: "docs"
+          # GitHub Pages should point at /public (see README).
+          OUTPUT_DIR: "public"
+          # Prevent unbounded growth of CSV/JSONL files in scheduled runs.
+          APPEND: "false"
         run: |
           set -euo pipefail
           node -v
           npm -v
-          mkdir -p docs
+          mkdir -p public docs
 
           # Generate new files first; only overwrite committed ones on success.
-          rm -f docs/*.tmp || true
+          rm -f public/*.tmp || true
           echo "Running fetch_tx_traffic.js..."
-          OUTPUT_DIR="docs" node scripts/fetch_tx_traffic.js
-          node scripts/filter_4types_csv.js docs/tx_traffic.csv docs/tx_traffic_4types.csv
-          node scripts/trim_csv.js docs/tx_traffic.csv 500
-          node scripts/trim_csv.js docs/tx_traffic_4types.csv 500
-          node scripts/trim_csv.js docs/tx_kb_data.csv 500
+          OUTPUT_DIR="public" node scripts/fetch_tx_traffic.js
+          node scripts/filter_4types_csv.js public/tx_traffic.csv public/tx_traffic_4types.csv
+          node scripts/trim_csv.js public/tx_traffic.csv 500
+          node scripts/trim_csv.js public/tx_traffic_4types.csv 500
+          node scripts/trim_csv.js public/tx_kb_data.csv 500
+
+          # Keep docs/ in sync for repos that still use docs/ as the Pages root.
+          cp -f public/tx_traffic.csv docs/tx_traffic.csv
+          cp -f public/tx_traffic_4types.csv docs/tx_traffic_4types.csv
+          cp -f public/tx_kb_data.csv docs/tx_kb_data.csv
 
           # Fail fast if generation didn't produce files (prevents silent Pages 404s).
+          test -s public/tx_traffic.csv
+          test -s public/tx_traffic_4types.csv
+          test -s public/tx_kb_data.csv
           test -s docs/tx_traffic.csv
           test -s docs/tx_traffic_4types.csv
           test -s docs/tx_kb_data.csv
@@ -62,12 +73,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Docs directory contents:"
-          ls -la docs
+          echo "Public directory contents:"
+          ls -la public
 
           # Force-add in case any ignore rules still match.
+          # Don't commit tx_data.jsonl here — it grows without bound and can exceed GitHub's 100MB limit.
+          git add -f public/tx_traffic.csv public/tx_traffic_4types.csv public/tx_kb_data.csv || true
           git add -f docs/tx_traffic.csv docs/tx_traffic_4types.csv docs/tx_kb_data.csv || true
-          git add -f docs/tx_data.jsonl || true
           git commit -m "chore: refresh traffic CSVs" || exit 0
           git push
 
